@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -16,7 +17,7 @@ import (
 	"github.com/docker/docker/api/types/versions"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/integration-cli/requirement"
-	"github.com/docker/docker/internal/test/registry"
+	"github.com/docker/docker/testutil/registry"
 )
 
 func ArchitectureIsNot(arch string) bool {
@@ -82,8 +83,8 @@ func UnixCli() bool {
 
 func Network() bool {
 	// Set a timeout on the GET at 15s
-	var timeout = time.Duration(15 * time.Second)
-	var url = "https://hub.docker.com"
+	const timeout = 15 * time.Second
+	const url = "https://hub.docker.com"
 
 	client := http.Client{
 		Timeout: timeout,
@@ -190,6 +191,7 @@ func TODOBuildkit() bool {
 
 // testRequires checks if the environment satisfies the requirements
 // for the test to run or skips the tests.
-func testRequires(c requirement.SkipT, requirements ...requirement.Test) {
-	requirement.Is(c, requirements...)
+func testRequires(t *testing.T, requirements ...requirement.Test) {
+	t.Helper()
+	requirement.Is(t, requirements...)
 }

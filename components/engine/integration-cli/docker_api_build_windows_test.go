@@ -4,15 +4,15 @@ package main
 
 import (
 	"net/http"
+	"testing"
 
-	"github.com/docker/docker/internal/test/fakecontext"
-	"github.com/docker/docker/internal/test/request"
-	"github.com/go-check/check"
-	"gotest.tools/assert"
-	is "gotest.tools/assert/cmp"
+	"github.com/docker/docker/testutil/fakecontext"
+	"github.com/docker/docker/testutil/request"
+	"gotest.tools/v3/assert"
+	is "gotest.tools/v3/assert/cmp"
 )
 
-func (s *DockerSuite) TestBuildWithRecycleBin(c *check.C) {
+func (s *DockerSuite) TestBuildWithRecycleBin(c *testing.T) {
 	testRequires(c, DaemonIsWindows)
 
 	dockerfile := "" +

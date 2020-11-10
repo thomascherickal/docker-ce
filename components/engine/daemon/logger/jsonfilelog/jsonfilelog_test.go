@@ -15,9 +15,9 @@ import (
 
 	"github.com/docker/docker/daemon/logger"
 	"github.com/docker/docker/daemon/logger/jsonfilelog/jsonlog"
-	"gotest.tools/assert"
-	is "gotest.tools/assert/cmp"
-	"gotest.tools/fs"
+	"gotest.tools/v3/assert"
+	is "gotest.tools/v3/assert/cmp"
+	"gotest.tools/v3/fs"
 )
 
 func TestJSONFileLogger(t *testing.T) {
@@ -188,15 +188,15 @@ func TestJSONFileLoggerWithOpts(t *testing.T) {
 		}
 
 		file, err := os.Open(filename + ".1.gz")
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer file.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
 		zipReader, err := gzip.NewReader(file)
-		defer zipReader.Close()
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer zipReader.Close()
 		penUlt, err = ioutil.ReadAll(zipReader)
 		if err != nil {
 			t.Fatal(err)
@@ -204,15 +204,15 @@ func TestJSONFileLoggerWithOpts(t *testing.T) {
 	}
 
 	file, err := os.Open(filename + ".2.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer file.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
 	zipReader, err := gzip.NewReader(file)
-	defer zipReader.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer zipReader.Close()
 	antepenult, err := ioutil.ReadAll(zipReader)
 	if err != nil {
 		t.Fatal(err)

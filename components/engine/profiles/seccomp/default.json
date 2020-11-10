@@ -65,9 +65,14 @@
 				"chmod",
 				"chown",
 				"chown32",
+				"clock_adjtime",
+				"clock_adjtime64",
 				"clock_getres",
+				"clock_getres_time64",
 				"clock_gettime",
+				"clock_gettime64",
 				"clock_nanosleep",
+				"clock_nanosleep_time64",
 				"close",
 				"connect",
 				"copy_file_range",
@@ -89,6 +94,7 @@
 				"exit",
 				"exit_group",
 				"faccessat",
+				"faccessat2",
 				"fadvise64",
 				"fadvise64_64",
 				"fallocate",
@@ -117,6 +123,7 @@
 				"ftruncate",
 				"ftruncate64",
 				"futex",
+				"futex_time64",
 				"futimesat",
 				"getcpu",
 				"getcwd",
@@ -163,10 +170,14 @@
 				"io_destroy",
 				"io_getevents",
 				"io_pgetevents",
+				"io_pgetevents_time64",
 				"ioprio_get",
 				"ioprio_set",
 				"io_setup",
 				"io_submit",
+				"io_uring_enter",
+				"io_uring_register",
+				"io_uring_setup",
 				"ipc",
 				"kill",
 				"lchown",
@@ -184,6 +195,7 @@
 				"lstat",
 				"lstat64",
 				"madvise",
+				"membarrier",
 				"memfd_create",
 				"mincore",
 				"mkdir",
@@ -200,7 +212,9 @@
 				"mq_notify",
 				"mq_open",
 				"mq_timedreceive",
+				"mq_timedreceive_time64",
 				"mq_timedsend",
+				"mq_timedsend_time64",
 				"mq_unlink",
 				"mremap",
 				"msgctl",
@@ -216,17 +230,20 @@
 				"_newselect",
 				"open",
 				"openat",
+				"openat2",
 				"pause",
 				"pipe",
 				"pipe2",
 				"poll",
 				"ppoll",
+				"ppoll_time64",
 				"prctl",
 				"pread64",
 				"preadv",
 				"preadv2",
 				"prlimit64",
 				"pselect6",
+				"pselect6_time64",
 				"pwrite64",
 				"pwritev",
 				"pwritev2",
@@ -238,6 +255,7 @@
 				"recv",
 				"recvfrom",
 				"recvmmsg",
+				"recvmmsg_time64",
 				"recvmsg",
 				"remap_file_pages",
 				"removexattr",
@@ -246,6 +264,7 @@
 				"renameat2",
 				"restart_syscall",
 				"rmdir",
+				"rseq",
 				"rt_sigaction",
 				"rt_sigpending",
 				"rt_sigprocmask",
@@ -253,6 +272,7 @@
 				"rt_sigreturn",
 				"rt_sigsuspend",
 				"rt_sigtimedwait",
+				"rt_sigtimedwait_time64",
 				"rt_tgsigqueueinfo",
 				"sched_getaffinity",
 				"sched_getattr",
@@ -261,6 +281,7 @@
 				"sched_get_priority_min",
 				"sched_getscheduler",
 				"sched_rr_get_interval",
+				"sched_rr_get_interval_time64",
 				"sched_setaffinity",
 				"sched_setattr",
 				"sched_setparam",
@@ -272,6 +293,7 @@
 				"semget",
 				"semop",
 				"semtimedop",
+				"semtimedop_time64",
 				"send",
 				"sendfile",
 				"sendfile64",
@@ -314,6 +336,7 @@
 				"sigaltstack",
 				"signalfd",
 				"signalfd4",
+				"sigprocmask",
 				"sigreturn",
 				"socket",
 				"socketcall",
@@ -335,12 +358,16 @@
 				"time",
 				"timer_create",
 				"timer_delete",
-				"timerfd_create",
-				"timerfd_gettime",
-				"timerfd_settime",
 				"timer_getoverrun",
 				"timer_gettime",
+				"timer_gettime64",
 				"timer_settime",
+				"timer_settime64",
+				"timerfd_create",
+				"timerfd_gettime",
+				"timerfd_gettime64",
+				"timerfd_settime",
+				"timerfd_settime64",
 				"times",
 				"tkill",
 				"truncate",
@@ -352,6 +379,7 @@
 				"unlinkat",
 				"utime",
 				"utimensat",
+				"utimensat_time64",
 				"utimes",
 				"vfork",
 				"vmsplice",
@@ -388,7 +416,6 @@
 				{
 					"index": 0,
 					"value": 0,
-					"valueTwo": 0,
 					"op": "SCMP_CMP_EQ"
 				}
 			],
@@ -405,7 +432,6 @@
 				{
 					"index": 0,
 					"value": 8,
-					"valueTwo": 0,
 					"op": "SCMP_CMP_EQ"
 				}
 			],
@@ -422,7 +448,6 @@
 				{
 					"index": 0,
 					"value": 131072,
-					"valueTwo": 0,
 					"op": "SCMP_CMP_EQ"
 				}
 			],
@@ -439,7 +464,6 @@
 				{
 					"index": 0,
 					"value": 131080,
-					"valueTwo": 0,
 					"op": "SCMP_CMP_EQ"
 				}
 			],
@@ -456,7 +480,6 @@
 				{
 					"index": 0,
 					"value": 4294967295,
-					"valueTwo": 0,
 					"op": "SCMP_CMP_EQ"
 				}
 			],
@@ -597,7 +620,6 @@
 				{
 					"index": 0,
 					"value": 2114060288,
-					"valueTwo": 0,
 					"op": "SCMP_CMP_MASKED_EQ"
 				}
 			],
@@ -622,7 +644,6 @@
 				{
 					"index": 1,
 					"value": 2114060288,
-					"valueTwo": 0,
 					"op": "SCMP_CMP_MASKED_EQ"
 				}
 			],
@@ -671,8 +692,7 @@
 			"names": [
 				"delete_module",
 				"init_module",
-				"finit_module",
-				"query_module"
+				"finit_module"
 			],
 			"action": "SCMP_ACT_ALLOW",
 			"args": [],

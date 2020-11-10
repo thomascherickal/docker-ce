@@ -8,18 +8,18 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/creack/pty"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/internal/test/request"
 	"github.com/docker/docker/pkg/parsers/kernel"
-	"github.com/go-check/check"
-	"gotest.tools/assert"
+	"github.com/docker/docker/testutil/request"
+	"gotest.tools/v3/assert"
 )
 
-func (s *DockerSuite) TestUpdateRunningContainer(c *check.C) {
+func (s *DockerSuite) TestUpdateRunningContainer(c *testing.T) {
 	testRequires(c, DaemonIsLinux)
 	testRequires(c, memoryLimitSupport)
 
@@ -34,7 +34,7 @@ func (s *DockerSuite) TestUpdateRunningContainer(c *check.C) {
 	assert.Equal(c, strings.TrimSpace(out), "524288000")
 }
 
-func (s *DockerSuite) TestUpdateRunningContainerWithRestart(c *check.C) {
+func (s *DockerSuite) TestUpdateRunningContainerWithRestart(c *testing.T) {
 	testRequires(c, DaemonIsLinux)
 	testRequires(c, memoryLimitSupport)
 
@@ -50,7 +50,7 @@ func (s *DockerSuite) TestUpdateRunningContainerWithRestart(c *check.C) {
 	assert.Equal(c, strings.TrimSpace(out), "524288000")
 }
 
-func (s *DockerSuite) TestUpdateStoppedContainer(c *check.C) {
+func (s *DockerSuite) TestUpdateStoppedContainer(c *testing.T) {
 	testRequires(c, DaemonIsLinux)
 	testRequires(c, memoryLimitSupport)
 
@@ -65,7 +65,7 @@ func (s *DockerSuite) TestUpdateStoppedContainer(c *check.C) {
 	assert.Equal(c, strings.TrimSpace(out), "524288000")
 }
 
-func (s *DockerSuite) TestUpdatePausedContainer(c *check.C) {
+func (s *DockerSuite) TestUpdatePausedContainer(c *testing.T) {
 	testRequires(c, DaemonIsLinux)
 	testRequires(c, cpuShare)
 
@@ -82,7 +82,7 @@ func (s *DockerSuite) TestUpdatePausedContainer(c *check.C) {
 	assert.Equal(c, strings.TrimSpace(out), "500")
 }
 
-func (s *DockerSuite) TestUpdateWithUntouchedFields(c *check.C) {
+func (s *DockerSuite) TestUpdateWithUntouchedFields(c *testing.T) {
 	testRequires(c, DaemonIsLinux)
 	testRequires(c, memoryLimitSupport)
 	testRequires(c, cpuShare)
@@ -100,7 +100,7 @@ func (s *DockerSuite) TestUpdateWithUntouchedFields(c *check.C) {
 	assert.Equal(c, strings.TrimSpace(out), "800")
 }
 
-func (s *DockerSuite) TestUpdateContainerInvalidValue(c *check.C) {
+func (s *DockerSuite) TestUpdateContainerInvalidValue(c *testing.T) {
 	testRequires(c, DaemonIsLinux)
 	testRequires(c, memoryLimitSupport)
 
@@ -108,11 +108,11 @@ func (s *DockerSuite) TestUpdateContainerInvalidValue(c *check.C) {
 	dockerCmd(c, "run", "-d", "--name", name, "-m", "300M", "busybox", "true")
 	out, _, err := dockerCmdWithError("update", "-m", "2M", name)
 	assert.ErrorContains(c, err, "")
-	expected := "Minimum memory limit allowed is 4MB"
+	expected := "Minimum memory limit allowed is 6MB"
 	assert.Assert(c, strings.Contains(out, expected))
 }
 
-func (s *DockerSuite) TestUpdateContainerWithoutFlags(c *check.C) {
+func (s *DockerSuite) TestUpdateContainerWithoutFlags(c *testing.T) {
 	testRequires(c, DaemonIsLinux)
 	testRequires(c, memoryLimitSupport)
 
@@ -122,7 +122,7 @@ func (s *DockerSuite) TestUpdateContainerWithoutFlags(c *check.C) {
 	assert.ErrorContains(c, err, "")
 }
 
-func (s *DockerSuite) TestUpdateKernelMemory(c *check.C) {
+func (s *DockerSuite) TestUpdateKernelMemory(c *testing.T) {
 	testRequires(c, DaemonIsLinux, kernelMemorySupport)
 
 	name := "test-update-container"
@@ -136,7 +136,7 @@ func (s *DockerSuite) TestUpdateKernelMemory(c *check.C) {
 	assert.Equal(c, strings.TrimSpace(out), "104857600")
 }
 
-func (s *DockerSuite) TestUpdateKernelMemoryUninitialized(c *check.C) {
+func (s *DockerSuite) TestUpdateKernelMemoryUninitialized(c *testing.T) {
 	testRequires(c, DaemonIsLinux, kernelMemorySupport)
 
 	isNewKernel := CheckKernelVersion(4, 6, 0)
@@ -183,7 +183,7 @@ func CheckKernelVersion(k, major, minor int) bool {
 	return kernel.CompareKernelVersion(*GetKernelVersion(), kernel.VersionInfo{Kernel: k, Major: major, Minor: minor}) >= 0
 }
 
-func (s *DockerSuite) TestUpdateSwapMemoryOnly(c *check.C) {
+func (s *DockerSuite) TestUpdateSwapMemoryOnly(c *testing.T) {
 	testRequires(c, DaemonIsLinux)
 	testRequires(c, memoryLimitSupport)
 	testRequires(c, swapMemorySupport)
@@ -199,7 +199,7 @@ func (s *DockerSuite) TestUpdateSwapMemoryOnly(c *check.C) {
 	assert.Equal(c, strings.TrimSpace(out), "629145600")
 }
 
-func (s *DockerSuite) TestUpdateInvalidSwapMemory(c *check.C) {
+func (s *DockerSuite) TestUpdateInvalidSwapMemory(c *testing.T) {
 	testRequires(c, DaemonIsLinux)
 	testRequires(c, memoryLimitSupport)
 	testRequires(c, swapMemorySupport)
@@ -224,7 +224,7 @@ func (s *DockerSuite) TestUpdateInvalidSwapMemory(c *check.C) {
 	assert.Equal(c, strings.TrimSpace(out), "629145600")
 }
 
-func (s *DockerSuite) TestUpdateStats(c *check.C) {
+func (s *DockerSuite) TestUpdateStats(c *testing.T) {
 	testRequires(c, DaemonIsLinux)
 	testRequires(c, memoryLimitSupport)
 	testRequires(c, cpuCfsQuota)
@@ -253,7 +253,7 @@ func (s *DockerSuite) TestUpdateStats(c *check.C) {
 	assert.Equal(c, preMemLimit, curMemLimit)
 }
 
-func (s *DockerSuite) TestUpdateMemoryWithSwapMemory(c *check.C) {
+func (s *DockerSuite) TestUpdateMemoryWithSwapMemory(c *testing.T) {
 	testRequires(c, DaemonIsLinux)
 	testRequires(c, memoryLimitSupport)
 	testRequires(c, swapMemorySupport)
@@ -267,11 +267,11 @@ func (s *DockerSuite) TestUpdateMemoryWithSwapMemory(c *check.C) {
 	dockerCmd(c, "update", "--memory", "800M", "--memory-swap", "1000M", name)
 }
 
-func (s *DockerSuite) TestUpdateNotAffectMonitorRestartPolicy(c *check.C) {
+func (s *DockerSuite) TestUpdateNotAffectMonitorRestartPolicy(c *testing.T) {
 	testRequires(c, DaemonIsLinux, cpuShare)
 
 	out, _ := dockerCmd(c, "run", "-tid", "--restart=always", "busybox", "sh")
-	id := strings.TrimSpace(string(out))
+	id := strings.TrimSpace(out)
 	dockerCmd(c, "update", "--cpu-shares", "512", id)
 
 	cpty, tty, err := pty.Open()
@@ -295,7 +295,7 @@ func (s *DockerSuite) TestUpdateNotAffectMonitorRestartPolicy(c *check.C) {
 	assert.NilError(c, waitRun(id))
 }
 
-func (s *DockerSuite) TestUpdateWithNanoCPUs(c *check.C) {
+func (s *DockerSuite) TestUpdateWithNanoCPUs(c *testing.T) {
 	testRequires(c, cpuCfsQuota, cpuCfsPeriod)
 
 	file1 := "/sys/fs/cgroup/cpu/cpu.cfs_quota_us"

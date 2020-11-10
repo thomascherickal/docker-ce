@@ -3,24 +3,14 @@ package daemon // import "github.com/docker/docker/integration-cli/daemon"
 import (
 	"fmt"
 	"strings"
+	"testing"
 	"time"
 
-	"github.com/docker/docker/internal/test/daemon"
-	"github.com/go-check/check"
+	"github.com/docker/docker/testutil/daemon"
 	"github.com/pkg/errors"
-	"gotest.tools/assert"
-	"gotest.tools/icmd"
+	"gotest.tools/v3/assert"
+	"gotest.tools/v3/icmd"
 )
-
-type testingT interface {
-	assert.TestingT
-	logT
-	Fatalf(string, ...interface{})
-}
-
-type logT interface {
-	Logf(string, ...interface{})
-}
 
 // Daemon represents a Docker daemon for the testing framework.
 type Daemon struct {
@@ -31,7 +21,8 @@ type Daemon struct {
 // New returns a Daemon instance to be used for testing.
 // This will create a directory such as d123456789 in the folder specified by $DOCKER_INTEGRATION_DAEMON_DEST or $DEST.
 // The daemon will not automatically start.
-func New(t testingT, dockerBinary string, dockerdBinary string, ops ...func(*daemon.Daemon)) *Daemon {
+func New(t testing.TB, dockerBinary string, dockerdBinary string, ops ...daemon.Option) *Daemon {
+	t.Helper()
 	ops = append(ops, daemon.WithDockerdBinary(dockerdBinary))
 	d := daemon.New(t, ops...)
 	return &Daemon{
@@ -88,13 +79,14 @@ func (d *Daemon) inspectFieldWithError(name, field string) (string, error) {
 
 // CheckActiveContainerCount returns the number of active containers
 // FIXME(vdemeester) should re-use ActivateContainers in some way
-func (d *Daemon) CheckActiveContainerCount(c *check.C) (interface{}, check.CommentInterface) {
+func (d *Daemon) CheckActiveContainerCount(t *testing.T) (interface{}, string) {
+	t.Helper()
 	out, err := d.Cmd("ps", "-q")
-	assert.NilError(c, err)
+	assert.NilError(t, err)
 	if len(strings.TrimSpace(out)) == 0 {
-		return 0, nil
+		return 0, ""
 	}
-	return len(strings.Split(strings.TrimSpace(out), "\n")), check.Commentf("output: %q", string(out))
+	return len(strings.Split(strings.TrimSpace(out), "\n")), fmt.Sprintf("output: %q", out)
 }
 
 // WaitRun waits for a container to be running for 10s

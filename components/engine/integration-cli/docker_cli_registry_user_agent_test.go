@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"testing"
 
-	"github.com/docker/docker/internal/test/registry"
-	"github.com/go-check/check"
-	"gotest.tools/assert"
+	"github.com/docker/docker/testutil/registry"
+	"gotest.tools/v3/assert"
 )
 
 // unescapeBackslashSemicolonParens unescapes \;()
@@ -18,18 +18,18 @@ func unescapeBackslashSemicolonParens(s string) string {
 	ret := re.ReplaceAll([]byte(s), []byte(";"))
 
 	re = regexp.MustCompile(`\\\(`)
-	ret = re.ReplaceAll([]byte(ret), []byte("("))
+	ret = re.ReplaceAll(ret, []byte("("))
 
 	re = regexp.MustCompile(`\\\)`)
-	ret = re.ReplaceAll([]byte(ret), []byte(")"))
+	ret = re.ReplaceAll(ret, []byte(")"))
 
 	re = regexp.MustCompile(`\\\\`)
-	ret = re.ReplaceAll([]byte(ret), []byte(`\`))
+	ret = re.ReplaceAll(ret, []byte(`\`))
 
 	return string(ret)
 }
 
-func regexpCheckUA(c *check.C, ua string) {
+func regexpCheckUA(c *testing.T, ua string) {
 	re := regexp.MustCompile("(?P<dockerUA>.+) UpstreamClient(?P<upstreamUA>.+)")
 	substrArr := re.FindStringSubmatch(ua)
 
@@ -45,7 +45,7 @@ func regexpCheckUA(c *check.C, ua string) {
 	// check upstreamUA looks correct
 	// Expecting something like:  Docker-Client/1.11.0-dev (linux)
 	upstreamUA := unescapeBackslashSemicolonParens(upstreamUAEscaped)
-	reUpstreamUA := regexp.MustCompile("^\\(Docker-Client/[0-9A-Za-z+]")
+	reUpstreamUA := regexp.MustCompile(`^\(Docker-Client/[0-9A-Za-z+]`)
 	bMatchUpstreamUA := reUpstreamUA.MatchString(upstreamUA)
 	assert.Assert(c, bMatchUpstreamUA, "(Upstream) Docker Client User-Agent malformed")
 }
@@ -71,12 +71,13 @@ func registerUserAgentHandler(reg *registry.Mock, result *string) {
 // TestUserAgentPassThrough verifies that when an image is pulled from
 // a registry, the registry should see a User-Agent string of the form
 // [docker engine UA] UpstreamClientSTREAM-CLIENT([client UA])
-func (s *DockerRegistrySuite) TestUserAgentPassThrough(c *check.C) {
+func (s *DockerRegistrySuite) TestUserAgentPassThrough(c *testing.T) {
 	var ua string
 
 	reg, err := registry.NewMock(c)
-	defer reg.Close()
 	assert.NilError(c, err)
+	defer reg.Close()
+
 	registerUserAgentHandler(reg, &ua)
 	repoName := fmt.Sprintf("%s/busybox", reg.URL())
 

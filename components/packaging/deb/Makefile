@@ -1,13 +1,12 @@
 include ../common.mk
 
-CLI_DIR:=$(realpath $(CURDIR)/../../cli)
-ENGINE_DIR:=$(realpath $(CURDIR)/../../engine)
-GITCOMMIT?=$(shell cd $(CLI_DIR) && git rev-parse --short HEAD)
-STATIC_VERSION:=$(shell ../static/gen-static-ver $(ENGINE_DIR) $(VERSION))
+PLUGINS_DIR=$(realpath $(CURDIR)/../plugins)
+GITCOMMIT?=$(shell cd $(realpath $(CURDIR)/../src/github.com/docker/cli) && git rev-parse --short HEAD)
+CLI_GITCOMMIT?=$(shell cd $(realpath $(CURDIR)/../src/github.com/docker/cli) && git rev-parse --short HEAD)
+ENGINE_GITCOMMIT?=$(shell cd $(realpath $(CURDIR)/../src/github.com/docker/docker) && git rev-parse --short HEAD)
 GO_BASE_IMAGE=golang
-GO_IMAGE=$(GO_BASE_IMAGE):$(GO_VERSION)-stretch
-DEB_VERSION=$(shell ./gen-deb-ver $(CLI_DIR) "$(VERSION)")
-CHOWN:=docker run --rm -v $(CURDIR):/v -w /v alpine chown
+GO_IMAGE?=$(GO_BASE_IMAGE):$(GO_VERSION)-buster
+GEN_DEB_VER=$(shell ./gen-deb-ver $(realpath $(CURDIR)/../src/github.com/docker/cli) "$(VERSION)")
 EPOCH?=5
 
 ifdef BUILD_IMAGE
@@ -15,30 +14,31 @@ ifdef BUILD_IMAGE
 endif
 
 COMMON_FILES=common
-BUILD?=docker build \
+BUILD?=DOCKER_BUILDKIT=1 \
+	docker build \
 	$(BUILD_IMAGE_FLAG) \
 	--build-arg GO_IMAGE=$(GO_IMAGE) \
 	--build-arg COMMON_FILES=$(COMMON_FILES) \
 	-t debbuild-$@/$(ARCH) \
-	-f $(CURDIR)/$@/Dockerfile .
+	-f $@/Dockerfile \
+	.
+
 # Additional flags may be necessary at some point
 RUN_FLAGS=
-RUN=docker run --rm -i \
-	-e EPOCH='$(EPOCH)' \
-	-e DEB_VERSION=$(word 1, $(DEB_VERSION)) \
-	-e VERSION=$(word 2, $(DEB_VERSION)) \
-	-e DOCKER_GITCOMMIT=$(GITCOMMIT) \
+RUN?=docker run --rm \
 	-e PLATFORM \
+	-e EPOCH='$(EPOCH)' \
+	-e DEB_VERSION=$(word 1, $(GEN_DEB_VER)) \
+	-e VERSION=$(word 2, $(GEN_DEB_VER)) \
+	-e CLI_GITCOMMIT=$(CLI_GITCOMMIT) \
+	-e ENGINE_GITCOMMIT=$(ENGINE_GITCOMMIT) \
 	-v $(CURDIR)/debbuild/$@:/build \
 	$(RUN_FLAGS) \
 	debbuild-$@/$(ARCH)
 
-SOURCE_FILES=engine-image cli.tgz engine.tgz docker.service docker.socket distribution_based_engine.json plugin-installers.tgz
-SOURCES=$(addprefix sources/, $(SOURCE_FILES))
-
-DEBIAN_VERSIONS := debian-stretch debian-buster
-UBUNTU_VERSIONS := ubuntu-xenial ubuntu-bionic ubuntu-cosmic ubuntu-disco
-RASPBIAN_VERSIONS := raspbian-stretch raspbian-buster
+DEBIAN_VERSIONS ?= debian-buster
+UBUNTU_VERSIONS ?= ubuntu-xenial ubuntu-bionic ubuntu-focal ubuntu-groovy
+RASPBIAN_VERSIONS ?= raspbian-buster
 DISTROS := $(DEBIAN_VERSIONS) $(UBUNTU_VERSIONS) $(RASPBIAN_VERSIONS)
 
 .PHONY: help
@@ -51,11 +51,7 @@ clean: ## remove build artifacts
 	$(RM) -r debbuild
 	[ ! -d sources ] || $(CHOWN) -R $(shell id -u):$(shell id -g) sources
 	$(RM) -r sources
-	$(RM) engine-image
-
-engine-$(ARCH).tar:
-	$(MAKE) -C ../image image-linux
-	docker save -o $@ $$(cat ../image/image-linux)
+	-docker builder prune -f --filter until=24h
 
 .PHONY: deb
 deb: ubuntu debian ## build all deb packages except for raspbian
@@ -70,7 +66,7 @@ debian: $(DEBIAN_VERSIONS) ## build all debian deb packages
 raspbian: $(RASPBIAN_VERSIONS) ## build all raspbian deb packages
 
 .PHONY: $(DISTROS)
-$(DISTROS): $(SOURCES)
+$(DISTROS): sources/cli.tgz sources/engine.tgz sources/docker.service sources/docker.socket sources/plugin-installers.tgz
 	@echo "== Building packages for $@ =="
 	$(BUILD)
 	$(RUN)
@@ -78,16 +74,16 @@ $(DISTROS): $(SOURCES)
 
 sources/engine.tgz:
 	mkdir -p $(@D)
-	docker run --rm -i -w /v \
-		-v $(ENGINE_DIR):/engine \
+	docker run --rm -w /v \
+		-v $(realpath $(CURDIR)/../src/github.com/docker/docker):/engine \
 		-v $(CURDIR)/$(@D):/v \
 		alpine \
 		tar -C / -c -z -f /v/engine.tgz --exclude .git engine
 
 sources/cli.tgz:
 	mkdir -p $(@D)
-	docker run --rm -i -w /v \
-		-v $(CLI_DIR):/cli \
+	docker run --rm -w /v \
+		-v $(realpath $(CURDIR)/../src/github.com/docker/cli):/cli \
 		-v $(CURDIR)/$(@D):/v \
 		alpine \
 		tar -C / -c -z -f /v/cli.tgz --exclude .git cli
@@ -100,21 +96,9 @@ sources/docker.socket: ../systemd/docker.socket
 	mkdir -p $(@D)
 	cp $< $@
 
-# TODO: Figure out how to decouple this
-# TODO: These might just end up being static files that are hardcoded
-# TODO: FROM HERE <=====================
-sources/distribution_based_engine.json: sources/engine-image
-	mkdir -p $(@D)
-	echo '{"platform":"Docker Engine - Community","engine_image":"engine-community","containerd_min_version":"1.2.0-beta.1","runtime":"host_install"}' > $@
-
-sources/engine-image:
-	mkdir -p $(@D)
-	echo "docker.io/dockereng/engine-community:$(STATIC_VERSION)" > $@
-# TODO: TO HERE <=====================
-
 sources/plugin-installers.tgz: $(wildcard ../plugins/*)
-	docker run --rm -i -w /v \
-		-v $(shell readlink -e ../plugins):/plugins \
-		-v $(CURDIR)/sources:/v \
+	docker run --rm -w /v \
+		-v $(PLUGINS_DIR):/plugins \
+		-v $(CURDIR)/$(@D):/v \
 		alpine \
 		tar -C / -c -z -f /v/plugin-installers.tgz --exclude .git plugins

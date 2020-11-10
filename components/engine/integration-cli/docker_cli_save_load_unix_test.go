@@ -9,17 +9,17 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/creack/pty"
 	"github.com/docker/docker/integration-cli/cli/build"
-	"github.com/go-check/check"
-	"gotest.tools/assert"
-	"gotest.tools/icmd"
+	"gotest.tools/v3/assert"
+	"gotest.tools/v3/icmd"
 )
 
 // save a repo and try to load it using stdout
-func (s *DockerSuite) TestSaveAndLoadRepoStdout(c *check.C) {
+func (s *DockerSuite) TestSaveAndLoadRepoStdout(c *testing.T) {
 	name := "test-save-and-load-repo-stdout"
 	dockerCmd(c, "run", "--name", name, "busybox", "true")
 
@@ -66,11 +66,11 @@ func (s *DockerSuite) TestSaveAndLoadRepoStdout(c *check.C) {
 	buf := make([]byte, 1024)
 
 	n, err := pty.Read(buf)
-	assert.NilError(c, err) //could not read tty output
+	assert.NilError(c, err, "could not read tty output")
 	assert.Assert(c, strings.Contains(string(buf[:n]), "cowardly refusing"), "help output is not being yielded")
 }
 
-func (s *DockerSuite) TestSaveAndLoadWithProgressBar(c *check.C) {
+func (s *DockerSuite) TestSaveAndLoadWithProgressBar(c *testing.T) {
 	name := "test-load"
 	buildImageSuccessfully(c, name, build.WithDockerfile(`FROM busybox
 	RUN touch aa
@@ -88,7 +88,7 @@ func (s *DockerSuite) TestSaveAndLoadWithProgressBar(c *check.C) {
 }
 
 // fail because load didn't receive data from stdin
-func (s *DockerSuite) TestLoadNoStdinFail(c *check.C) {
+func (s *DockerSuite) TestLoadNoStdinFail(c *testing.T) {
 	pty, tty, err := pty.Open()
 	assert.NilError(c, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

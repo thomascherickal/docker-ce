@@ -3,18 +3,18 @@ package main
 import (
 	"fmt"
 	"strings"
+	"testing"
 
-	"github.com/go-check/check"
-	"gotest.tools/assert"
+	"gotest.tools/v3/assert"
 )
 
 // search for repos named  "registry" on the central registry
-func (s *DockerSuite) TestSearchOnCentralRegistry(c *check.C) {
+func (s *DockerSuite) TestSearchOnCentralRegistry(c *testing.T) {
 	out, _ := dockerCmd(c, "search", "busybox")
 	assert.Assert(c, strings.Contains(out, "Busybox base image."), "couldn't find any repository named (or containing) 'Busybox base image.'")
 }
 
-func (s *DockerSuite) TestSearchStarsOptionWithWrongParameter(c *check.C) {
+func (s *DockerSuite) TestSearchStarsOptionWithWrongParameter(c *testing.T) {
 	out, _, err := dockerCmdWithError("search", "--filter", "stars=a", "busybox")
 	assert.ErrorContains(c, err, "", out)
 	assert.Assert(c, strings.Contains(out, "Invalid filter"), "couldn't find the invalid filter warning")
@@ -32,23 +32,23 @@ func (s *DockerSuite) TestSearchStarsOptionWithWrongParameter(c *check.C) {
 	assert.Assert(c, strings.Contains(out, "Invalid filter"), "couldn't find the invalid filter warning")
 }
 
-func (s *DockerSuite) TestSearchCmdOptions(c *check.C) {
+func (s *DockerSuite) TestSearchCmdOptions(c *testing.T) {
 	outSearchCmd, _ := dockerCmd(c, "search", "busybox")
 	assert.Assert(c, strings.Count(outSearchCmd, "\n") > 3, outSearchCmd)
 
-	outSearchCmdautomated, _ := dockerCmd(c, "search", "--filter", "is-automated=true", "busybox") //The busybox is a busybox base image, not an AUTOMATED image.
+	outSearchCmdautomated, _ := dockerCmd(c, "search", "--filter", "is-automated=true", "busybox") // The busybox is a busybox base image, not an AUTOMATED image.
 	outSearchCmdautomatedSlice := strings.Split(outSearchCmdautomated, "\n")
 	for i := range outSearchCmdautomatedSlice {
 		assert.Assert(c, !strings.HasPrefix(outSearchCmdautomatedSlice[i], "busybox "), "The busybox is not an AUTOMATED image: %s", outSearchCmdautomated)
 	}
 
-	outSearchCmdNotOfficial, _ := dockerCmd(c, "search", "--filter", "is-official=false", "busybox") //The busybox is a busybox base image, official image.
+	outSearchCmdNotOfficial, _ := dockerCmd(c, "search", "--filter", "is-official=false", "busybox") // The busybox is a busybox base image, official image.
 	outSearchCmdNotOfficialSlice := strings.Split(outSearchCmdNotOfficial, "\n")
 	for i := range outSearchCmdNotOfficialSlice {
 		assert.Assert(c, !strings.HasPrefix(outSearchCmdNotOfficialSlice[i], "busybox "), "The busybox is not an OFFICIAL image: %s", outSearchCmdNotOfficial)
 	}
 
-	outSearchCmdOfficial, _ := dockerCmd(c, "search", "--filter", "is-official=true", "busybox") //The busybox is a busybox base image, official image.
+	outSearchCmdOfficial, _ := dockerCmd(c, "search", "--filter", "is-official=true", "busybox") // The busybox is a busybox base image, official image.
 	outSearchCmdOfficialSlice := strings.Split(outSearchCmdOfficial, "\n")
 	assert.Equal(c, len(outSearchCmdOfficialSlice), 3) // 1 header, 1 line, 1 carriage return
 	assert.Assert(c, strings.HasPrefix(outSearchCmdOfficialSlice[1], "busybox "), "The busybox is an OFFICIAL image: %s", outSearchCmdOfficial)
@@ -60,12 +60,12 @@ func (s *DockerSuite) TestSearchCmdOptions(c *check.C) {
 }
 
 // search for repos which start with "ubuntu-" on the central registry
-func (s *DockerSuite) TestSearchOnCentralRegistryWithDash(c *check.C) {
+func (s *DockerSuite) TestSearchOnCentralRegistryWithDash(c *testing.T) {
 	dockerCmd(c, "search", "ubuntu-")
 }
 
 // test case for #23055
-func (s *DockerSuite) TestSearchWithLimit(c *check.C) {
+func (s *DockerSuite) TestSearchWithLimit(c *testing.T) {
 	for _, limit := range []int{10, 50, 100} {
 		out, _, err := dockerCmdWithError("search", fmt.Sprintf("--limit=%d", limit), "docker")
 		assert.NilError(c, err)

@@ -14,6 +14,7 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/manifestlist"
+	"github.com/docker/distribution/manifest/ocischema"
 	"github.com/docker/distribution/manifest/schema1"
 	"github.com/docker/distribution/manifest/schema2"
 	"github.com/docker/distribution/reference"
@@ -31,7 +32,7 @@ import (
 	"github.com/docker/docker/pkg/system"
 	refstore "github.com/docker/docker/reference"
 	"github.com/docker/docker/registry"
-	"github.com/opencontainers/go-digest"
+	digest "github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -173,7 +174,7 @@ func (ld *v2LayerDescriptor) Download(ctx context.Context, progressOutput progre
 			return nil, 0, xfer.DoNotRetry{Err: err}
 		}
 	} else {
-		offset, err = ld.tmpFile.Seek(0, os.SEEK_END)
+		offset, err = ld.tmpFile.Seek(0, io.SeekEnd)
 		if err != nil {
 			logrus.Debugf("error seeking to end of download file: %v", err)
 			offset = 0
@@ -200,7 +201,7 @@ func (ld *v2LayerDescriptor) Download(ctx context.Context, progressOutput progre
 	}
 
 	if offset != 0 {
-		_, err := layerDownload.Seek(offset, os.SEEK_SET)
+		_, err := layerDownload.Seek(offset, io.SeekStart)
 		if err != nil {
 			if err := ld.truncateDownloadFile(); err != nil {
 				return nil, 0, xfer.DoNotRetry{Err: err}
@@ -208,7 +209,7 @@ func (ld *v2LayerDescriptor) Download(ctx context.Context, progressOutput progre
 			return nil, 0, err
 		}
 	}
-	size, err := layerDownload.Seek(0, os.SEEK_END)
+	size, err := layerDownload.Seek(0, io.SeekEnd)
 	if err != nil {
 		// Seek failed, perhaps because there was no Content-Length
 		// header. This shouldn't fail the download, because we can
@@ -226,7 +227,7 @@ func (ld *v2LayerDescriptor) Download(ctx context.Context, progressOutput progre
 		// Restore the seek offset either at the beginning of the
 		// stream, or just after the last byte we have from previous
 		// attempts.
-		_, err = layerDownload.Seek(offset, os.SEEK_SET)
+		_, err = layerDownload.Seek(offset, io.SeekStart)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -272,7 +273,7 @@ func (ld *v2LayerDescriptor) Download(ctx context.Context, progressOutput progre
 
 	logrus.Debugf("Downloaded %s to tempfile %s", ld.ID(), tmpFile.Name())
 
-	_, err = tmpFile.Seek(0, os.SEEK_SET)
+	_, err = tmpFile.Seek(0, io.SeekStart)
 	if err != nil {
 		tmpFile.Close()
 		if err := os.Remove(tmpFile.Name()); err != nil {
@@ -310,7 +311,7 @@ func (ld *v2LayerDescriptor) truncateDownloadFile() error {
 	// Need a new hash context since we will be redoing the download
 	ld.verifier = nil
 
-	if _, err := ld.tmpFile.Seek(0, os.SEEK_SET); err != nil {
+	if _, err := ld.tmpFile.Seek(0, io.SeekStart); err != nil {
 		logrus.Errorf("error seeking to beginning of download file: %v", err)
 		return err
 	}
@@ -392,9 +393,14 @@ func (p *v2Puller) pullV2Tag(ctx context.Context, ref reference.Named, platform 
 		if p.config.RequireSchema2 {
 			return false, fmt.Errorf("invalid manifest: not schema2")
 		}
-		msg := schema1DeprecationMessage(ref)
-		logrus.Warn(msg)
-		progress.Message(p.config.ProgressOutput, "", msg)
+
+		// give registries time to upgrade to schema2 and only warn if we know a registry has been upgraded long time ago
+		// TODO: condition to be removed
+		if reference.Domain(ref) == "docker.io" {
+			msg := fmt.Sprintf("Image %s uses outdated schema1 manifest format. Please upgrade to a schema2 image for better future compatibility. More information at https://docs.docker.com/registry/spec/deprecated-schema-v1/", ref)
+			logrus.Warn(msg)
+			progress.Message(p.config.ProgressOutput, "", msg)
+		}
 
 		id, manifestDigest, err = p.pullSchema1(ctx, ref, v, platform)
 		if err != nil {
@@ -402,6 +408,11 @@ func (p *v2Puller) pullV2Tag(ctx context.Context, ref reference.Named, platform 
 		}
 	case *schema2.DeserializedManifest:
 		id, manifestDigest, err = p.pullSchema2(ctx, ref, v, platform)
+		if err != nil {
+			return false, err
+		}
+	case *ocischema.DeserializedManifest:
+		id, manifestDigest, err = p.pullOCI(ctx, ref, v, platform)
 		if err != nil {
 			return false, err
 		}
@@ -552,24 +563,18 @@ func (p *v2Puller) pullSchema1(ctx context.Context, ref reference.Reference, unv
 	return imageID, manifestDigest, nil
 }
 
-func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *schema2.DeserializedManifest, platform *specs.Platform) (id digest.Digest, manifestDigest digest.Digest, err error) {
-	manifestDigest, err = schema2ManifestDigest(ref, mfst)
-	if err != nil {
-		return "", "", err
-	}
-
-	target := mfst.Target()
+func (p *v2Puller) pullSchema2Layers(ctx context.Context, target distribution.Descriptor, layers []distribution.Descriptor, platform *specs.Platform) (id digest.Digest, err error) {
 	if _, err := p.config.ImageStore.Get(target.Digest); err == nil {
 		// If the image already exists locally, no need to pull
 		// anything.
-		return target.Digest, manifestDigest, nil
+		return target.Digest, nil
 	}
 
 	var descriptors []xfer.DownloadDescriptor
 
 	// Note that the order of this loop is in the direction of bottom-most
 	// to top-most, so that the downloads slice gets ordered correctly.
-	for _, d := range mfst.Layers {
+	for _, d := range layers {
 		layerDescriptor := &v2LayerDescriptor{
 			digest:            d.Digest,
 			repo:              p.repo,
@@ -624,23 +629,23 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 	if runtime.GOOS == "windows" {
 		configJSON, configRootFS, configPlatform, err = receiveConfig(p.config.ImageStore, configChan, configErrChan)
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
 		if configRootFS == nil {
-			return "", "", errRootFSInvalid
+			return "", errRootFSInvalid
 		}
 		if err := checkImageCompatibility(configPlatform.OS, configPlatform.OSVersion); err != nil {
-			return "", "", err
+			return "", err
 		}
 
 		if len(descriptors) != len(configRootFS.DiffIDs) {
-			return "", "", errRootFSMismatch
+			return "", errRootFSMismatch
 		}
 		if platform == nil {
 			// Early bath if the requested OS doesn't match that of the configuration.
 			// This avoids doing the download, only to potentially fail later.
 			if !system.IsOSSupported(configPlatform.OS) {
-				return "", "", fmt.Errorf("cannot download image with operating system %q when requesting %q", configPlatform.OS, layerStoreOS)
+				return "", fmt.Errorf("cannot download image with operating system %q when requesting %q", configPlatform.OS, layerStoreOS)
 			}
 			layerStoreOS = configPlatform.OS
 		}
@@ -687,14 +692,14 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 			case <-downloadsDone:
 			case <-layerErrChan:
 			}
-			return "", "", err
+			return "", err
 		}
 	}
 
 	select {
 	case <-downloadsDone:
 	case err = <-layerErrChan:
-		return "", "", err
+		return "", err
 	}
 
 	if release != nil {
@@ -706,22 +711,40 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 		// Otherwise the image config could be referencing layers that aren't
 		// included in the manifest.
 		if len(downloadedRootFS.DiffIDs) != len(configRootFS.DiffIDs) {
-			return "", "", errRootFSMismatch
+			return "", errRootFSMismatch
 		}
 
 		for i := range downloadedRootFS.DiffIDs {
 			if downloadedRootFS.DiffIDs[i] != configRootFS.DiffIDs[i] {
-				return "", "", errRootFSMismatch
+				return "", errRootFSMismatch
 			}
 		}
 	}
 
 	imageID, err := p.config.ImageStore.Put(configJSON)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
-	return imageID, manifestDigest, nil
+	return imageID, nil
+}
+
+func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *schema2.DeserializedManifest, platform *specs.Platform) (id digest.Digest, manifestDigest digest.Digest, err error) {
+	manifestDigest, err = schema2ManifestDigest(ref, mfst)
+	if err != nil {
+		return "", "", err
+	}
+	id, err = p.pullSchema2Layers(ctx, mfst.Target(), mfst.Layers, platform)
+	return id, manifestDigest, err
+}
+
+func (p *v2Puller) pullOCI(ctx context.Context, ref reference.Named, mfst *ocischema.DeserializedManifest, platform *specs.Platform) (id digest.Digest, manifestDigest digest.Digest, err error) {
+	manifestDigest, err = schema2ManifestDigest(ref, mfst)
+	if err != nil {
+		return "", "", err
+	}
+	id, err = p.pullSchema2Layers(ctx, mfst.Target(), mfst.Layers, platform)
+	return id, manifestDigest, err
 }
 
 func receiveConfig(s ImageConfigStore, configChan <-chan []byte, errChan <-chan error) ([]byte, *image.RootFS, *specs.Platform, error) {
@@ -791,7 +814,7 @@ func (p *v2Puller) pullManifestList(ctx context.Context, ref reference.Named, mf
 
 	switch v := manifest.(type) {
 	case *schema1.SignedManifest:
-		msg := schema1DeprecationMessage(ref)
+		msg := fmt.Sprintf("[DEPRECATION NOTICE] v2 schema1 manifests in manifest lists are not supported and will break in a future release. Suggest author of %s to upgrade to v2 schema2. More information at https://docs.docker.com/registry/spec/deprecated-schema-v1/", ref)
 		logrus.Warn(msg)
 		progress.Message(p.config.ProgressOutput, "", msg)
 
@@ -803,6 +826,12 @@ func (p *v2Puller) pullManifestList(ctx context.Context, ref reference.Named, mf
 	case *schema2.DeserializedManifest:
 		platform := toOCIPlatform(manifestMatches[0].Platform)
 		id, _, err = p.pullSchema2(ctx, manifestRef, v, &platform)
+		if err != nil {
+			return "", "", err
+		}
+	case *ocischema.DeserializedManifest:
+		platform := toOCIPlatform(manifestMatches[0].Platform)
+		id, _, err = p.pullOCI(ctx, manifestRef, v, &platform)
 		if err != nil {
 			return "", "", err
 		}

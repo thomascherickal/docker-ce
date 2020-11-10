@@ -26,7 +26,7 @@ import (
 	"github.com/docker/swarmkit/api"
 	"github.com/docker/swarmkit/log"
 	gogotypes "github.com/gogo/protobuf/types"
-	"github.com/opencontainers/go-digest"
+	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
@@ -97,7 +97,7 @@ func (c *containerAdapter) pullImage(ctx context.Context) error {
 	pr, pw := io.Pipe()
 	metaHeaders := map[string][]string{}
 	go func() {
-		// TODO @jhowardmsft LCOW Support: This will need revisiting as
+		// TODO LCOW Support: This will need revisiting as
 		// the stack is built up to include LCOW support for swarm.
 		err := c.imageBackend.PullImage(ctx, c.container.image(), "", nil, metaHeaders, authConfig, pw)
 		pw.CloseWithError(err)
@@ -222,12 +222,17 @@ func (c *containerAdapter) createNetworks(ctx context.Context) error {
 }
 
 func (c *containerAdapter) removeNetworks(ctx context.Context) error {
+	var (
+		activeEndpointsError *libnetwork.ActiveEndpointsError
+		errNoSuchNetwork     libnetwork.ErrNoSuchNetwork
+	)
+
 	for name, v := range c.container.networksAttachments {
 		if err := c.backend.DeleteManagedNetwork(v.Network.ID); err != nil {
-			switch errors.Cause(err).(type) {
-			case *libnetwork.ActiveEndpointsError:
+			switch {
+			case errors.As(err, &activeEndpointsError):
 				continue
-			case libnetwork.ErrNoSuchNetwork:
+			case errors.As(err, &errNoSuchNetwork):
 				continue
 			default:
 				log.G(ctx).Errorf("network %s remove failed: %v", name, err)

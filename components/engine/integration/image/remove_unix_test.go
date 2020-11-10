@@ -7,6 +7,8 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -14,10 +16,14 @@ import (
 	"unsafe"
 
 	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/internal/test/daemon"
-	"github.com/docker/docker/internal/test/fakecontext"
-	"gotest.tools/assert"
-	"gotest.tools/skip"
+	_ "github.com/docker/docker/daemon/graphdriver/register" // register graph drivers
+	"github.com/docker/docker/daemon/images"
+	"github.com/docker/docker/layer"
+	"github.com/docker/docker/pkg/idtools"
+	"github.com/docker/docker/testutil/daemon"
+	"github.com/docker/docker/testutil/fakecontext"
+	"gotest.tools/v3/assert"
+	"gotest.tools/v3/skip"
 )
 
 // This is a regression test for #38488
@@ -28,16 +34,31 @@ func TestRemoveImageGarbageCollector(t *testing.T) {
 	// daemon for remove image layer.
 	skip.If(t, testEnv.DaemonInfo.OSType != "linux")
 	skip.If(t, os.Getenv("DOCKER_ENGINE_GOARCH") != "amd64")
+	skip.If(t, testEnv.IsRootless, "rootless mode doesn't support overlay2 on most distros")
 
 	// Create daemon with overlay2 graphdriver because vfs uses disk differently
 	// and this test case would not work with it.
-	d := daemon.New(t, daemon.WithStorageDriver("overlay2"), daemon.WithImageService)
+	d := daemon.New(t, daemon.WithStorageDriver("overlay2"))
 	d.Start(t)
 	defer d.Stop(t)
 
 	ctx := context.Background()
 	client := d.NewClientT(t)
-	i := d.ImageService()
+
+	layerStores := make(map[string]layer.Store)
+	layerStores[runtime.GOOS], _ = layer.NewStoreFromOptions(layer.StoreOptions{
+		Root:                      d.Root,
+		MetadataStorePathTemplate: filepath.Join(d.RootDir(), "image", "%s", "layerdb"),
+		GraphDriver:               d.StorageDriver(),
+		GraphDriverOptions:        nil,
+		IDMapping:                 &idtools.IdentityMapping{},
+		PluginGetter:              nil,
+		ExperimentalEnabled:       false,
+		OS:                        runtime.GOOS,
+	})
+	i := images.NewImageService(images.ImageServiceConfig{
+		LayerStores: layerStores,
+	})
 
 	img := "test-garbage-collector"
 
@@ -88,6 +109,12 @@ func TestRemoveImageGarbageCollector(t *testing.T) {
 
 	// Run imageService.Cleanup() and make sure that layer was removed from disk
 	i.Cleanup()
-	dir, err = os.Stat(data["UpperDir"])
-	assert.ErrorContains(t, err, "no such file or directory")
+	_, err = os.Stat(data["UpperDir"])
+	assert.Assert(t, os.IsNotExist(err))
+
+	// Make sure that removal pending layers does not exist on layerdb either
+	layerdbItems, _ := ioutil.ReadDir(filepath.Join(d.RootDir(), "/image/overlay2/layerdb/sha256"))
+	for _, folder := range layerdbItems {
+		assert.Equal(t, false, strings.HasSuffix(folder.Name(), "-removing"))
+	}
 }

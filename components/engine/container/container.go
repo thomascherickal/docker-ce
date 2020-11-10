@@ -23,6 +23,7 @@ import (
 	"github.com/docker/docker/daemon/logger"
 	"github.com/docker/docker/daemon/logger/jsonfilelog"
 	"github.com/docker/docker/daemon/logger/local"
+	"github.com/docker/docker/daemon/logger/loggerutils/cache"
 	"github.com/docker/docker/daemon/network"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/image"
@@ -31,13 +32,13 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/signal"
-	"github.com/docker/docker/pkg/symlink"
 	"github.com/docker/docker/pkg/system"
 	"github.com/docker/docker/restartmanager"
 	"github.com/docker/docker/volume"
 	volumemounts "github.com/docker/docker/volume/mounts"
-	"github.com/docker/go-units"
+	units "github.com/docker/go-units"
 	agentexec "github.com/docker/swarmkit/agent/exec"
+	"github.com/moby/sys/symlink"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -104,8 +105,13 @@ type Container struct {
 	NoNewPrivileges bool
 
 	// Fields here are specific to Windows
-	NetworkSharedContainerID string   `json:"-"`
-	SharedEndpointList       []string `json:"-"`
+	NetworkSharedContainerID string            `json:"-"`
+	SharedEndpointList       []string          `json:"-"`
+	LocalLogCacheMeta        localLogCacheMeta `json:",omitempty"`
+}
+
+type localLogCacheMeta struct {
+	HaveNotifyEnabled bool
 }
 
 // NewBaseContainer creates a new container with its
@@ -257,7 +263,7 @@ func (container *Container) WriteHostConfig() (*containertypes.HostConfig, error
 
 // SetupWorkingDirectory sets up the container's working directory as set in container.Config.WorkingDir
 func (container *Container) SetupWorkingDirectory(rootIdentity idtools.Identity) error {
-	// TODO @jhowardmsft, @gupta-ak LCOW Support. This will need revisiting.
+	// TODO: LCOW Support. This will need revisiting.
 	// We will need to do remote filesystem operations here.
 	if container.OS != runtime.GOOS {
 		return nil
@@ -414,6 +420,25 @@ func (container *Container) StartLogger() (logger.Logger, error) {
 			}
 		}
 		l = logger.NewRingLogger(l, info, bufferSize)
+	}
+
+	if _, ok := l.(logger.LogReader); !ok {
+		if cache.ShouldUseCache(cfg.Config) {
+			logPath, err := container.GetRootResourcePath("container-cached.log")
+			if err != nil {
+				return nil, err
+			}
+
+			if !container.LocalLogCacheMeta.HaveNotifyEnabled {
+				logrus.WithField("container", container.ID).WithField("driver", container.HostConfig.LogConfig.Type).Info("Configured log driver does not support reads, enabling local file cache for container logs")
+				container.LocalLogCacheMeta.HaveNotifyEnabled = true
+			}
+			info.LogPath = logPath
+			l, err = cache.WithLocalCache(l, info)
+			if err != nil {
+				return nil, errors.Wrap(err, "error setting up local container log cache")
+			}
+		}
 	}
 	return l, nil
 }
@@ -698,12 +723,20 @@ func (container *Container) CreateDaemonEnvironment(tty bool, linkedEnv []string
 	if os == "" {
 		os = runtime.GOOS
 	}
-	env := []string{}
+
+	// Figure out what size slice we need so we can allocate this all at once.
+	envSize := len(container.Config.Env)
 	if runtime.GOOS != "windows" || (runtime.GOOS == "windows" && os == "linux") {
-		env = []string{
-			"PATH=" + system.DefaultPathEnv(os),
-			"HOSTNAME=" + container.Config.Hostname,
-		}
+		envSize += 2 + len(linkedEnv)
+	}
+	if tty {
+		envSize++
+	}
+
+	env := make([]string, 0, envSize)
+	if runtime.GOOS != "windows" || (runtime.GOOS == "windows" && os == "linux") {
+		env = append(env, "PATH="+system.DefaultPathEnv(os))
+		env = append(env, "HOSTNAME="+container.Config.Hostname)
 		if tty {
 			env = append(env, "TERM=xterm")
 		}

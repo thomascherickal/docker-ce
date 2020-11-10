@@ -1,5 +1,7 @@
 %global debug_package %{nil}
 
+# BTRFS is enabled by default, but can be disabled by defining _without_btrfs
+%{!?_with_btrfs: %{!?_without_btrfs: %define _with_btrfs 1}}
 
 Name: docker-ce
 Version: %{_version}
@@ -15,21 +17,24 @@ URL: https://www.docker.com
 Vendor: Docker
 Packager: Docker <support@docker.com>
 
+Requires: /usr/sbin/groupadd
 Requires: docker-ce-cli
+Requires: docker-ce-rootless-extras
 Requires: container-selinux >= 2:2.74
 Requires: libseccomp >= 2.3
 Requires: systemd
+%if 0%{?rhel} >= 8
+Requires: ( iptables or nftables )
+%else
 Requires: iptables
+%endif
 Requires: libcgroup
-Requires: containerd.io >= 1.2.2-3
+Requires: containerd.io >= 1.4.1
 Requires: tar
 Requires: xz
 
-# Resolves: rhbz#1165615
-Requires: device-mapper-libs >= 1.02.90-1
-
 BuildRequires: bash
-BuildRequires: btrfs-progs-devel
+%{?_with_btrfs:BuildRequires: btrfs-progs-devel}
 BuildRequires: ca-certificates
 BuildRequires: cmake
 BuildRequires: device-mapper-devel
@@ -75,11 +80,11 @@ depending on a particular stack or provider.
 
 %build
 
-export DOCKER_GITCOMMIT=%{_gitcommit}
+export DOCKER_GITCOMMIT=%{_gitcommit_engine}
 mkdir -p /go/src/github.com/docker
-ln -s /root/rpmbuild/BUILD/src/engine /go/src/github.com/docker/docker
+ln -s ${RPM_BUILD_DIR}/src/engine /go/src/github.com/docker/docker
 
-pushd engine
+pushd ${RPM_BUILD_DIR}/src/engine
 for component in tini "proxy dynamic";do
     TMP_GOPATH="/go" hack/dockerfile/install/install.sh $component
 done
@@ -91,28 +96,24 @@ engine/bundles/dynbinary-daemon/dockerd -v
 
 %install
 # install daemon binary
-install -D -p -m 0755 $(readlink -f engine/bundles/dynbinary-daemon/dockerd) $RPM_BUILD_ROOT/%{_bindir}/dockerd
+install -D -p -m 0755 $(readlink -f engine/bundles/dynbinary-daemon/dockerd) ${RPM_BUILD_ROOT}%{_bindir}/dockerd
 
 # install proxy
-install -D -p -m 0755 /usr/local/bin/docker-proxy $RPM_BUILD_ROOT/%{_bindir}/docker-proxy
+install -D -p -m 0755 /usr/local/bin/docker-proxy ${RPM_BUILD_ROOT}%{_bindir}/docker-proxy
 
 # install tini
-install -D -p -m 755 /usr/local/bin/docker-init $RPM_BUILD_ROOT/%{_bindir}/docker-init
+install -D -p -m 755 /usr/local/bin/docker-init ${RPM_BUILD_ROOT}%{_bindir}/docker-init
 
 # install systemd scripts
-install -D -m 0644 %{_topdir}/SOURCES/docker.service $RPM_BUILD_ROOT/%{_unitdir}/docker.service
-install -D -m 0644 %{_topdir}/SOURCES/docker.socket $RPM_BUILD_ROOT/%{_unitdir}/docker.socket
-
-# install json for docker engine activate / upgrade
-install -D -m 0644 %{_topdir}/SOURCES/distribution_based_engine.json $RPM_BUILD_ROOT/var/lib/docker-engine/distribution_based_engine-ce.json
+install -D -m 0644 ${RPM_SOURCE_DIR}/docker.service ${RPM_BUILD_ROOT}%{_unitdir}/docker.service
+install -D -m 0644 ${RPM_SOURCE_DIR}/docker.socket ${RPM_BUILD_ROOT}%{_unitdir}/docker.socket
 
 %files
-/%{_bindir}/dockerd
-/%{_bindir}/docker-proxy
-/%{_bindir}/docker-init
-/%{_unitdir}/docker.service
-/%{_unitdir}/docker.socket
-/var/lib/docker-engine/distribution_based_engine-ce.json
+%{_bindir}/dockerd
+%{_bindir}/docker-proxy
+%{_bindir}/docker-init
+%{_unitdir}/docker.service
+%{_unitdir}/docker.socket
 
 %post
 %systemd_post docker.service

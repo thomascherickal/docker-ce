@@ -12,11 +12,11 @@ import (
 	"github.com/docker/distribution"
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/idtools"
-	"github.com/docker/docker/pkg/locker"
 	"github.com/docker/docker/pkg/plugingetter"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/pkg/system"
-	"github.com/opencontainers/go-digest"
+	"github.com/moby/locker"
+	digest "github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/vbatts/tar-split/tar/asm"
 	"github.com/vbatts/tar-split/tar/storage"
@@ -419,11 +419,11 @@ func (ls *layerStore) Map() map[ChainID]Layer {
 func (ls *layerStore) deleteLayer(layer *roLayer, metadata *Metadata) error {
 	// Rename layer digest folder first so we detect orphan layer(s)
 	// if ls.driver.Remove fails
-	dir := ls.store.getLayerDirectory(layer.chainID)
+	var dir string
 	for {
 		dgst := digest.Digest(layer.chainID)
 		tmpID := fmt.Sprintf("%s-%s-removing", dgst.Hex(), stringid.GenerateRandomID())
-		dir := filepath.Join(ls.store.root, string(dgst.Algorithm()), tmpID)
+		dir = filepath.Join(ls.store.root, string(dgst.Algorithm()), tmpID)
 		err := os.Rename(ls.store.getLayerDirectory(layer.chainID), dir)
 		if os.IsExist(err) {
 			continue

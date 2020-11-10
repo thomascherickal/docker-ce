@@ -6,7 +6,7 @@ set -e
 mkdir -p /root/build-deb/engine
 tar -C /root/build-deb -xzf /sources/engine.tgz
 mkdir -p /root/build-deb/cli
-tar  -C /root/build-deb -xzf /sources/cli.tgz
+tar -C /root/build-deb -xzf /sources/cli.tgz
 
 # link them to their canonical path
 mkdir -p /go/src/github.com/docker
@@ -16,17 +16,17 @@ ln -snf /root/build-deb/cli /go/src/github.com/docker/cli
 EPOCH="${EPOCH:-}"
 EPOCH_SEP=""
 if [[ ! -z "$EPOCH" ]]; then
-    EPOCH_SEP=":"
+	EPOCH_SEP=":"
 fi
 
 if [[ -z "$DEB_VERSION" ]]; then
-    echo "DEB_VERSION is required to build deb packages"
-    exit 1
+	echo "DEB_VERSION is required to build deb packages"
+	exit 1
 fi
 
 echo VERSION AAA $VERSION
 
-VERSION=${VERSION:-$( cat cli/VERSION )}
+VERSION=${VERSION:-$(cat cli/VERSION)}
 
 echo VERSION bbb $VERSION
 
@@ -42,7 +42,8 @@ EOF
 # The space above at the start of the line for the debMaintainer is very important
 
 # Give the script a git commit because it wants it
-export DOCKER_GITCOMMIT=${DOCKER_GITCOMMIT-$(cd cli; $GIT_COMMAND rev-parse --short HEAD)}
+export CLI_GITCOMMIT=${CLI_GITCOMMIT-$(cd cli; $GIT_COMMAND rev-parse --short HEAD)}
+export ENGINE_GITCOMMIT=${ENGINE_GITCOMMIT-$(cd engine; $GIT_COMMAND rev-parse --short HEAD)}
 
 echo VERSION BBB $VERSION
 dpkg-buildpackage -uc -us -I.git

@@ -7,12 +7,10 @@ import (
 
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/opts"
-	"github.com/docker/go-units"
+	units "github.com/docker/go-units"
 )
 
 const (
-	// DefaultCgroupNamespaceMode is the default for a container's CgroupnsMode, if not set otherwise
-	DefaultCgroupNamespaceMode = "host" // TODO: change to private
 	// DefaultIpcMode is default for container's IpcMode, if not set otherwise
 	DefaultIpcMode = "private"
 )

@@ -20,7 +20,7 @@ import (
 	"sync"
 
 	"github.com/Microsoft/hcsshim"
-	"github.com/docker/docker/pkg/system"
+	"github.com/Microsoft/hcsshim/osversion"
 	"github.com/docker/libnetwork/datastore"
 	"github.com/docker/libnetwork/discoverapi"
 	"github.com/docker/libnetwork/driverapi"
@@ -217,7 +217,7 @@ func (d *driver) parseNetworkOptions(id string, genericOptions map[string]string
 			}
 			config.VSID = uint(vsid)
 		case EnableOutboundNat:
-			if system.GetOSVersion().Build <= 16236 {
+			if osversion.Build() <= 16236 {
 				return nil, fmt.Errorf("Invalid network option. OutboundNat is not supported on this OS version")
 			}
 			b, err := strconv.ParseBool(value)
@@ -255,7 +255,7 @@ func (d *driver) DecodeTableEntry(tablename string, key string, value []byte) (s
 	return "", nil
 }
 
-func (d *driver) createNetwork(config *networkConfiguration) error {
+func (d *driver) createNetwork(config *networkConfiguration) *hnsNetwork {
 	network := &hnsNetwork{
 		id:         config.ID,
 		endpoints:  make(map[string]*hnsEndpoint),
@@ -268,7 +268,7 @@ func (d *driver) createNetwork(config *networkConfiguration) error {
 	d.networks[config.ID] = network
 	d.Unlock()
 
-	return nil
+	return network
 }
 
 // Create a new network
@@ -293,11 +293,7 @@ func (d *driver) CreateNetwork(id string, option map[string]interface{}, nInfo d
 		return err
 	}
 
-	err = d.createNetwork(config)
-
-	if err != nil {
-		return err
-	}
+	n := d.createNetwork(config)
 
 	// A non blank hnsid indicates that the network was discovered
 	// from HNS. No need to call HNS if this network was discovered
@@ -371,6 +367,36 @@ func (d *driver) CreateNetwork(id string, option map[string]interface{}, nInfo d
 
 		config.HnsID = hnsresponse.Id
 		genData[HNSID] = config.HnsID
+		n.created = true
+
+		defer func() {
+			if err != nil {
+				d.DeleteNetwork(n.id)
+			}
+		}()
+
+		hnsIPv4Data := make([]driverapi.IPAMData, len(hnsresponse.Subnets))
+
+		for i, subnet := range hnsresponse.Subnets {
+			var gwIP, subnetIP *net.IPNet
+
+			//The gateway returned from HNS is an IPAddress.
+			//We need to convert it to an IPNet to use as the Gateway of driverapi.IPAMData struct
+			gwCIDR := subnet.GatewayAddress + "/32"
+			_, gwIP, err = net.ParseCIDR(gwCIDR)
+			if err != nil {
+				return err
+			}
+
+			hnsIPv4Data[i].Gateway = gwIP
+			_, subnetIP, err = net.ParseCIDR(subnet.AddressPrefix)
+			if err != nil {
+				return err
+			}
+			hnsIPv4Data[i].Pool = subnetIP
+		}
+
+		nInfo.UpdateIpamConfig(hnsIPv4Data)
 
 	} else {
 		// Delete any stale HNS endpoints for this network.
@@ -387,13 +413,10 @@ func (d *driver) CreateNetwork(id string, option map[string]interface{}, nInfo d
 		} else {
 			logrus.Warnf("Error listing HNS endpoints for network %s", config.HnsID)
 		}
+
+		n.created = true
 	}
 
-	n, err := d.getNetwork(id)
-	if err != nil {
-		return err
-	}
-	n.created = true
 	return d.storeUpdate(config)
 }
 

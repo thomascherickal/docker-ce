@@ -83,7 +83,7 @@ func Start(ctx context.Context, rootDir, stateDir string, opts ...DaemonOpt) (Da
 	}
 	r.setDefaults()
 
-	if err := system.MkdirAll(stateDir, 0700, ""); err != nil {
+	if err := system.MkdirAll(stateDir, 0700); err != nil {
 		return nil, err
 	}
 
@@ -300,6 +300,7 @@ func (r *remote) monitorDaemon(ctx context.Context) {
 				delay = 100 * time.Millisecond
 				continue
 			}
+			logrus.WithField("address", r.GRPC.Address).Debug("Created containerd monitoring client")
 		}
 
 		if client != nil {
@@ -313,6 +314,14 @@ func (r *remote) monitorDaemon(ctx context.Context) {
 				}
 
 				transientFailureCount = 0
+
+				select {
+				case <-r.daemonWaitCh:
+				case <-ctx.Done():
+				}
+
+				// Set a small delay in case there is a recurring failure (or bug in this code)
+				// to ensure we don't end up in a super tight loop.
 				delay = 500 * time.Millisecond
 				continue
 			}

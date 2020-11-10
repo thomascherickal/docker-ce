@@ -3,7 +3,7 @@ set -e -u -o pipefail
 
 ARCH=$(uname -m)
 if [ "$ARCH" = "x86_64" ]; then
-  ARCH="amd64"
+	ARCH="amd64"
 fi
 
 export DOCKER_ENGINE_GOARCH=${DOCKER_ENGINE_GOARCH:-${ARCH}}
@@ -13,17 +13,14 @@ export DOCKER_ENGINE_GOARCH=${DOCKER_ENGINE_GOARCH:-${ARCH}}
 : ${TESTDEBUG:=}
 
 integration_api_dirs=${TEST_INTEGRATION_DIR:-"$(
-	find /tests/integration -type d |
-	grep -vE '(^/tests/integration($|/internal)|/testdata)')"}
+	find /tests/integration -type d \
+		| grep -vE '(^/tests/integration($|/internal)|/testdata)'
+)"}
 
 run_test_integration() {
 	set_platform_timeout
-	if [[ "$TESTFLAGS" != *-check.f* ]]; then
-		run_test_integration_suites
-	fi
-	if [[ "$TESTFLAGS" != *-test.run* ]]; then
-		run_test_integration_legacy_suites
-	fi
+	run_test_integration_suites
+	run_test_integration_legacy_suites
 }
 
 run_test_integration_suites() {
@@ -39,7 +36,7 @@ run_test_integration_suites() {
 
 run_test_integration_legacy_suites() {
 	(
-		flags="-check.v -check.timeout=${TIMEOUT:-200m} -test.timeout=360m $TESTFLAGS"
+		flags="-test.v -test.timeout=360m $TESTFLAGS"
 		cd /tests/integration-cli
 		echo "Running $PWD"
 		test_env ./test.main $flags

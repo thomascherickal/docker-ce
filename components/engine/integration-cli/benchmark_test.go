@@ -7,12 +7,12 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"testing"
 
-	"github.com/go-check/check"
-	"gotest.tools/assert"
+	"gotest.tools/v3/assert"
 )
 
-func (s *DockerSuite) BenchmarkConcurrentContainerActions(c *check.C) {
+func (s *DockerSuite) BenchmarkConcurrentContainerActions(c *testing.B) {
 	maxConcurrency := runtime.GOMAXPROCS(0)
 	numIterations := c.N
 	outerGroup := &sync.WaitGroup{}

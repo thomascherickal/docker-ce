@@ -14,12 +14,12 @@ import (
 	swarmtypes "github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/api/types/swarm/runtime"
 	"github.com/docker/docker/integration/internal/swarm"
-	"github.com/docker/docker/internal/test/daemon"
-	"github.com/docker/docker/internal/test/fixtures/plugin"
-	"github.com/docker/docker/internal/test/registry"
-	"gotest.tools/assert"
-	"gotest.tools/poll"
-	"gotest.tools/skip"
+	"github.com/docker/docker/testutil/daemon"
+	"github.com/docker/docker/testutil/fixtures/plugin"
+	"github.com/docker/docker/testutil/registry"
+	"gotest.tools/v3/assert"
+	"gotest.tools/v3/poll"
+	"gotest.tools/v3/skip"
 )
 
 func TestServicePlugin(t *testing.T) {
@@ -31,9 +31,9 @@ func TestServicePlugin(t *testing.T) {
 	reg := registry.NewV2(t)
 	defer reg.Close()
 
-	repo := path.Join(registry.DefaultURL, "swarm", "test:v1")
-	repo2 := path.Join(registry.DefaultURL, "swarm", "test:v2")
-	name := "test"
+	name := "test-" + strings.ToLower(t.Name())
+	repo := path.Join(registry.DefaultURL, "swarm", name+":v1")
+	repo2 := path.Join(registry.DefaultURL, "swarm", name+":v2")
 
 	d := daemon.New(t)
 	d.StartWithBusybox(t)
@@ -56,12 +56,12 @@ func TestServicePlugin(t *testing.T) {
 	assert.NilError(t, err)
 	d.Stop(t)
 
-	d1 := swarm.NewSwarm(t, testEnv, daemon.WithExperimental)
+	d1 := swarm.NewSwarm(t, testEnv, daemon.WithExperimental())
 	defer d1.Stop(t)
-	d2 := daemon.New(t, daemon.WithExperimental, daemon.WithSwarmPort(daemon.DefaultSwarmPort+1))
+	d2 := daemon.New(t, daemon.WithExperimental(), daemon.WithSwarmPort(daemon.DefaultSwarmPort+1))
 	d2.StartAndSwarmJoin(t, d1, true)
 	defer d2.Stop(t)
-	d3 := daemon.New(t, daemon.WithExperimental, daemon.WithSwarmPort(daemon.DefaultSwarmPort+2))
+	d3 := daemon.New(t, daemon.WithExperimental(), daemon.WithSwarmPort(daemon.DefaultSwarmPort+2))
 	d3.StartAndSwarmJoin(t, d1, false)
 	defer d3.Stop(t)
 

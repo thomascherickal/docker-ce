@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"os"
 	"reflect"
 	"strings"
@@ -31,9 +32,10 @@ const (
 	// maximum number of uploads that
 	// may take place at a time for each push.
 	DefaultMaxConcurrentUploads = 5
-	// StockRuntimeName is the reserved name/alias used to represent the
-	// OCI runtime being shipped with the docker daemon package.
-	StockRuntimeName = "runc"
+	// DefaultDownloadAttempts is the default value for
+	// maximum number of attempts that
+	// may take place at a time for each pull when the connection is lost.
+	DefaultDownloadAttempts = 5
 	// DefaultShmSize is the default value for container's shm size
 	DefaultShmSize = int64(67108864)
 	// DefaultNetworkMtu is the default value for network MTU
@@ -42,7 +44,23 @@ const (
 	DisableNetworkBridge = "none"
 	// DefaultInitBinary is the name of the default init binary
 	DefaultInitBinary = "docker-init"
+
+	// StockRuntimeName is the reserved name/alias used to represent the
+	// OCI runtime being shipped with the docker daemon package.
+	StockRuntimeName = "runc"
+	// LinuxV1RuntimeName is the runtime used to specify the containerd v1 shim with the runc binary
+	// Note this is different than io.containerd.runc.v1 which would be the v1 shim using the v2 shim API.
+	// This is specifically for the v1 shim using the v1 shim API.
+	LinuxV1RuntimeName = "io.containerd.runtime.v1.linux"
+	// LinuxV2RuntimeName is the runtime used to specify the containerd v2 runc shim
+	LinuxV2RuntimeName = "io.containerd.runc.v2"
 )
+
+var builtinRuntimes = map[string]bool{
+	StockRuntimeName:   true,
+	LinuxV1RuntimeName: true,
+	LinuxV2RuntimeName: true,
+}
 
 // flatOptions contains configuration keys
 // that MUST NOT be parsed as deep structures.
@@ -111,9 +129,10 @@ type CommonTLSOptions struct {
 
 // DNSConfig defines the DNS configurations.
 type DNSConfig struct {
-	DNS        []string `json:"dns,omitempty"`
-	DNSOptions []string `json:"dns-opts,omitempty"`
-	DNSSearch  []string `json:"dns-search,omitempty"`
+	DNS           []string `json:"dns,omitempty"`
+	DNSOptions    []string `json:"dns-opts,omitempty"`
+	DNSSearch     []string `json:"dns-search,omitempty"`
+	HostGatewayIP net.IP   `json:"host-gateway-ip,omitempty"`
 }
 
 // CommonConfig defines the configuration of a docker daemon which is
@@ -153,15 +172,18 @@ type CommonConfig struct {
 	// ClusterStore is the storage backend used for the cluster information. It is used by both
 	// multihost networking (to store networks and endpoints information) and by the node discovery
 	// mechanism.
+	// Deprecated: host-discovery and overlay networks with external k/v stores are deprecated
 	ClusterStore string `json:"cluster-store,omitempty"`
 
 	// ClusterOpts is used to pass options to the discovery package for tuning libkv settings, such
 	// as TLS configuration settings.
+	// Deprecated: host-discovery and overlay networks with external k/v stores are deprecated
 	ClusterOpts map[string]string `json:"cluster-store-opts,omitempty"`
 
 	// ClusterAdvertise is the network endpoint that the Engine advertises for the purpose of node
 	// discovery. This should be a 'host:port' combination on which that daemon instance is
 	// reachable by other hosts.
+	// Deprecated: host-discovery and overlay networks with external k/v stores are deprecated
 	ClusterAdvertise string `json:"cluster-advertise,omitempty"`
 
 	// MaxConcurrentDownloads is the maximum number of downloads that
@@ -172,6 +194,10 @@ type CommonConfig struct {
 	// may take place at a time for each push.
 	MaxConcurrentUploads *int `json:"max-concurrent-uploads,omitempty"`
 
+	// MaxDownloadAttempts is the maximum number of attempts that
+	// may take place at a time for each push.
+	MaxDownloadAttempts *int `json:"max-download-attempts,omitempty"`
+
 	// ShutdownTimeout is the timeout value (in seconds) the daemon will wait for the container
 	// to stop when daemon is being shutdown
 	ShutdownTimeout int `json:"shutdown-timeout,omitempty"`
@@ -179,8 +205,8 @@ type CommonConfig struct {
 	Debug     bool     `json:"debug,omitempty"`
 	Hosts     []string `json:"hosts,omitempty"`
 	LogLevel  string   `json:"log-level,omitempty"`
-	TLS       bool     `json:"tls,omitempty"`
-	TLSVerify bool     `json:"tlsverify,omitempty"`
+	TLS       *bool    `json:"tls,omitempty"`
+	TLSVerify *bool    `json:"tlsverify,omitempty"`
 
 	// Embedded structs that allow config
 	// deserialization without the full struct.
@@ -296,25 +322,6 @@ func GetConflictFreeLabels(labels []string) ([]string, error) {
 		newLabels = append(newLabels, fmt.Sprintf("%s=%s", k, v))
 	}
 	return newLabels, nil
-}
-
-// ValidateReservedNamespaceLabels errors if the reserved namespaces com.docker.*,
-// io.docker.*, org.dockerproject.* are used in a configured engine label.
-//
-// TODO: This is a separate function because we need to warn users first of the
-// deprecation.  When we return an error, this logic can be added to Validate
-// or GetConflictFreeLabels instead of being here.
-func ValidateReservedNamespaceLabels(labels []string) error {
-	for _, label := range labels {
-		lowered := strings.ToLower(label)
-		if strings.HasPrefix(lowered, "com.docker.") || strings.HasPrefix(lowered, "io.docker.") ||
-			strings.HasPrefix(lowered, "org.dockerproject.") {
-			return fmt.Errorf(
-				"label %s not allowed: the namespaces com.docker.*, io.docker.*, and org.dockerproject.* are reserved for Docker's internal use",
-				label)
-		}
-	}
-	return nil
 }
 
 // Reload reads the configuration in the host and reloads the daemon and server.
@@ -485,9 +492,7 @@ func findConfigurationConflicts(config map[string]interface{}, flags *pflag.Flag
 	if len(unknownKeys) > 0 {
 		unknownNamedConflicts := func(f *pflag.Flag) {
 			if namedOption, ok := f.Value.(opts.NamedOption); ok {
-				if _, valid := unknownKeys[namedOption.Name()]; valid {
-					delete(unknownKeys, namedOption.Name())
-				}
+				delete(unknownKeys, namedOption.Name())
 			}
 		}
 		flags.VisitAll(unknownNamedConflicts)
@@ -534,7 +539,7 @@ func findConfigurationConflicts(config map[string]interface{}, flags *pflag.Flag
 
 // Validate validates some specific configs.
 // such as config.DNS, config.Labels, config.DNSSearch,
-// as well as config.MaxConcurrentDownloads, config.MaxConcurrentUploads.
+// as well as config.MaxConcurrentDownloads, config.MaxConcurrentUploads and config.MaxDownloadAttempts.
 func Validate(config *Config) error {
 	// validate DNS
 	for _, dns := range config.DNS {
@@ -564,6 +569,9 @@ func Validate(config *Config) error {
 	if config.MaxConcurrentUploads != nil && *config.MaxConcurrentUploads < 0 {
 		return fmt.Errorf("invalid max concurrent uploads: %d", *config.MaxConcurrentUploads)
 	}
+	if err := ValidateMaxDownloadAttempts(config); err != nil {
+		return err
+	}
 
 	// validate that "default" runtime is not reset
 	if runtimes := config.GetAllRuntimes(); len(runtimes) > 0 {
@@ -576,15 +584,25 @@ func Validate(config *Config) error {
 		return err
 	}
 
-	if defaultRuntime := config.GetDefaultRuntimeName(); defaultRuntime != "" && defaultRuntime != StockRuntimeName {
-		runtimes := config.GetAllRuntimes()
-		if _, ok := runtimes[defaultRuntime]; !ok {
-			return fmt.Errorf("specified default runtime '%s' does not exist", defaultRuntime)
+	if defaultRuntime := config.GetDefaultRuntimeName(); defaultRuntime != "" {
+		if !builtinRuntimes[defaultRuntime] {
+			runtimes := config.GetAllRuntimes()
+			if _, ok := runtimes[defaultRuntime]; !ok {
+				return fmt.Errorf("specified default runtime '%s' does not exist", defaultRuntime)
+			}
 		}
 	}
 
 	// validate platform-specific settings
 	return config.ValidatePlatformConfig()
+}
+
+// ValidateMaxDownloadAttempts validates if the max-download-attempts is within the valid range
+func ValidateMaxDownloadAttempts(config *Config) error {
+	if config.MaxDownloadAttempts != nil && *config.MaxDownloadAttempts <= 0 {
+		return fmt.Errorf("invalid max download attempts: %d", *config.MaxDownloadAttempts)
+	}
+	return nil
 }
 
 // ModifiedDiscoverySettings returns whether the discovery configuration has been modified or not.

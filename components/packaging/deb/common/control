@@ -4,13 +4,13 @@ Priority: optional
 Maintainer: Docker <support@docker.com>
 Build-Depends: bash,
                bash-completion,
-               libbtrfs-dev | btrfs-tools,
                ca-certificates,
                cmake,
                dh-apparmor,
                dh-systemd,
                gcc,
                git,
+               libbtrfs-dev | btrfs-tools,
                libc-dev,
                libdevmapper-dev,
                libltdl-dev,
@@ -27,16 +27,25 @@ Vcs-Git: git://github.com/docker/docker.git
 
 Package: docker-ce
 Architecture: linux-any
-Depends: docker-ce-cli, containerd.io (>= 1.2.2-3), iptables, libseccomp2 (>= 2.3.0), ${shlibs:Depends}
-Recommends: aufs-tools,
+Depends: containerd.io (>= 1.4.1),
+         docker-ce-cli,
+         iptables,
+         libseccomp2 (>= 2.3.0),
+         ${shlibs:Depends}
+Recommends: apparmor,
             ca-certificates,
-            cgroupfs-mount | cgroup-lite,
+            docker-ce-rootless-extras,
             git,
-            pigz,
-            xz-utils,
             libltdl7,
-            ${apparmor:Recommends}
-Conflicts: docker (<< 1.5~), docker.io, lxc-docker, lxc-docker-virtual-package, docker-engine, docker-engine-cs
+            pigz,
+            xz-utils
+Suggests: aufs-tools [amd64], cgroupfs-mount | cgroup-lite
+Conflicts: docker (<< 1.5~),
+           docker-engine,
+           docker-engine-cs,
+           docker.io,
+           lxc-docker,
+           lxc-docker-virtual-package
 Replaces: docker-engine
 Description: Docker: the open-source application container engine
  Docker is a product for you to build, ship and run any application as a
@@ -52,7 +61,12 @@ Description: Docker: the open-source application container engine
 Package: docker-ce-cli
 Architecture: linux-any
 Depends: ${shlibs:Depends}
-Conflicts: docker (<< 1.5~), docker.io, lxc-docker, lxc-docker-virtual-package, docker-engine, docker-engine-cs
+Conflicts: docker (<< 1.5~),
+           docker-engine,
+           docker-engine-cs,
+           docker.io,
+           lxc-docker,
+           lxc-docker-virtual-package
 Replaces: docker-ce (<< 5:0)
 Breaks: docker-ce (<< 5:0)
 Description: Docker CLI: the open-source application container engine
@@ -65,3 +79,20 @@ Description: Docker CLI: the open-source application container engine
  language, framework or packaging system. That makes them great building blocks
  for deploying and scaling web apps, databases, and backend services without
  depending on a particular stack or provider.
+
+Package: docker-ce-rootless-extras
+Architecture: linux-any
+Depends: docker-ce, ${shlibs:Depends}
+Conflicts: rootlesskit
+Replaces: rootlesskit
+Breaks: rootlesskit
+# slirp4netns (>= 0.4.0) is available in Debian since 11 and Ubuntu since 19.10
+Recommends: slirp4netns (>= 0.4.0)
+# Unlike RPM, DEB packages do not contain "Recommends: fuse-overlayfs (>= 0.7.0)" here,
+# because Debian (since 10) and Ubuntu support the kernel-mode rootless overlayfs.
+Description: Rootless support for Docker.
+  Use dockerd-rootless.sh to run the daemon.
+  Use dockerd-rootless-setuptool.sh to setup systemd for dockerd-rootless.sh .
+  This package contains RootlessKit, but does not contain VPNKit.
+  Either VPNKit or slirp4netns (>= 0.4.0) needs to be installed separately.
+Homepage: https://docs.docker.com/engine/security/rootless/
